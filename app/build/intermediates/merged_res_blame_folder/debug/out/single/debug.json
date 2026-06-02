@@ -1,0 +1,10 @@
+[
+    {
+        "merged": "C:\\Users\\HP\\.gradle\\daemon\\8.2\\com.callbridge.app-merged_res-20:\\drawable_ic_stat_call.xml.flat",
+        "source": "C:\\Users\\HP\\.gradle\\daemon\\8.2\\com.callbridge.app-main-22:\\drawable\\ic_stat_call.xml"
+    },
+    {
+        "merged": "com.callbridge.app-merged_res-20:/drawable_ic_stat_call.xml.flat",
+        "source": "com.callbridge.app-main-22:/drawable/ic_stat_call.xml"
+    }
+]
