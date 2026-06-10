@@ -30,7 +30,7 @@ object AppStrings {
     private val en = Pack(
         setupTitle = "CallBridge Setup",
         setupSubtitle = "One-time setup. Then close the app — sheet calls will auto-dial.",
-        nameHint = "Your name (e.g. rahul)",
+        nameHint = "Your name (e.g. anant)",
         registerBtn = "Register & enable auto-dial",
         registering = "Registering…",
         enterName = "Please enter your name",
@@ -65,7 +65,7 @@ object AppStrings {
     private val mr = Pack(
         setupTitle = "CallBridge सेटअप",
         setupSubtitle = "एकदाच सेटअप करा. मग अॅप बंद करा — शीटवरून कॉल आपोआप होतील.",
-        nameHint = "तुमचे नाव (उदा. rahul)",
+        nameHint = "तुमचे नाव (उदा. anant)",
         registerBtn = "नोंदणी करा आणि ऑटो-डायल सुरू करा",
         registering = "नोंदणी होत आहे…",
         enterName = "कृपया तुमचे नाव लिहा",

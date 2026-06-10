@@ -1,4 +1,4 @@
-com.callbridge.app.test.app-androidTest-0 C:\Users\HP\Downloads\Click To Call\CallBridgeAndroid\app\build\generated\res\resValues\androidTest\debug
-com.callbridge.app.test.app-mergeDebugAndroidTestResources-1 C:\Users\HP\Downloads\Click To Call\CallBridgeAndroid\app\build\intermediates\incremental\debugAndroidTest\mergeDebugAndroidTestResources\merged.dir
-com.callbridge.app.test.app-mergeDebugAndroidTestResources-2 C:\Users\HP\Downloads\Click To Call\CallBridgeAndroid\app\build\intermediates\incremental\debugAndroidTest\mergeDebugAndroidTestResources\stripped.dir
-com.callbridge.app.test.app-merged_res-3 C:\Users\HP\Downloads\Click To Call\CallBridgeAndroid\app\build\intermediates\merged_res\debugAndroidTest
+com.callbridge.app.test.app-androidTest-0 C:\Officie work\Click To CallV2\CallBridgeAndroid\app\build\generated\res\resValues\androidTest\debug
+com.callbridge.app.test.app-mergeDebugAndroidTestResources-1 C:\Officie work\Click To CallV2\CallBridgeAndroid\app\build\intermediates\incremental\debugAndroidTest\mergeDebugAndroidTestResources\merged.dir
+com.callbridge.app.test.app-mergeDebugAndroidTestResources-2 C:\Officie work\Click To CallV2\CallBridgeAndroid\app\build\intermediates\incremental\debugAndroidTest\mergeDebugAndroidTestResources\stripped.dir
+com.callbridge.app.test.app-merged_res-3 C:\Officie work\Click To CallV2\CallBridgeAndroid\app\build\intermediates\merged_res\debugAndroidTest

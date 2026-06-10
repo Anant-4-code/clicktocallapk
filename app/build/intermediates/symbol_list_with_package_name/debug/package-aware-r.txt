@@ -321,6 +321,10 @@ attr windowMinWidthMinor
 attr windowNoTitle
 bool abc_action_bar_embed_tabs
 bool abc_config_actionMenuItemAllCaps
+bool enable_system_alarm_service_default
+bool enable_system_foreground_service_default
+bool enable_system_job_service_default
+bool workmanager_test_configuration
 color abc_background_cache_hint_selector_material_dark
 color abc_background_cache_hint_selector_material_light
 color abc_btn_colored_borderless_text_material
@@ -706,12 +710,14 @@ id action_text
 id actions
 id activity_chooser_view_content
 id add
+id agent_spinner
 id alertTitle
 id always
 id async
 id beginning
 id blocking
 id bottom
+id btn_start
 id buttonPanel
 id center_vertical
 id checkbox
@@ -866,6 +872,7 @@ layout abc_search_dropdown_item_icons_2line
 layout abc_search_view
 layout abc_select_dialog_material
 layout abc_tooltip
+layout activity_agent_login
 layout custom_dialog
 layout ime_base_split_test_activity
 layout ime_secondary_split_test_activity

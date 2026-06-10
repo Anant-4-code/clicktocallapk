@@ -8,6 +8,9 @@ color teal_200
 color teal_700
 color white
 drawable ic_stat_call
+id agent_spinner
+id btn_start
+layout activity_agent_login
 string app_name
 string channel_desc
 string channel_name

@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.callbridge.app-mergeDebugResources-18:/values-night-v8/values-night-v8.xml",
+            "outputFile": "com.callbridge.app-mergeDebugResources-2:/values-night-v8/values-night-v8.xml",
             "map": [
                 {
                     "source": "C:\\Users\\HP\\.gradle\\caches\\transforms-3\\3fdcd8fc8fdde99adb1eb4c1f0cd10bd\\transformed\\appcompat-1.6.1\\res\\values-night-v8\\values-night-v8.xml",

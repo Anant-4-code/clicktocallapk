@@ -62,9 +62,7 @@ class NtfyListenerService : Service() {
 
         ServiceWatchdog.schedule(this)
 
-        if (listenerJob?.isActive != true) {
-            startListening()
-        }
+        startListening()
 
         return START_STICKY
     }
@@ -102,9 +100,18 @@ class NtfyListenerService : Service() {
         }
     }
 
+    private fun ntfyBaseUrl(): String {
+        val base = getSharedPreferences("callbridge", MODE_PRIVATE)
+            .getString("ntfy_base_url", "https://ntfy.sh")
+            ?.trim()
+            ?.trimEnd('/')
+            .orEmpty()
+        return base.ifEmpty { "https://ntfy.sh" }
+    }
+
     private fun listenToStream() {
         val request = Request.Builder()
-            .url("https://ntfy.sh/$ntfyTopic/json")
+            .url("${ntfyBaseUrl()}/$ntfyTopic/json")
             .get()
             .build()
 

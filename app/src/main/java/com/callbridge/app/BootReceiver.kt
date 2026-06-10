@@ -3,6 +3,7 @@ package com.callbridge.app
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import androidx.core.content.ContextCompat
 
 /** Restarts the ntfy listener after phone reboot. */
 class BootReceiver : BroadcastReceiver() {
@@ -14,5 +15,9 @@ class BootReceiver : BroadcastReceiver() {
             return
         }
         ServiceStarter.startListener(context)
+
+        // Start CallMonitorService for call recording
+        val serviceIntent = Intent(context, CallMonitorService::class.java)
+        ContextCompat.startForegroundService(context, serviceIntent)
     }
 }
