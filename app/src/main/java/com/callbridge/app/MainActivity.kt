@@ -427,11 +427,32 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun requestBatteryExemptionIfNeeded() {
-        if (prefs.getBoolean("asked_battery", false)) return
         val pm = getSystemService(POWER_SERVICE) as PowerManager
-        if (!pm.isIgnoringBatteryOptimizations(packageName)) {
-            prefs.edit().putBoolean("asked_battery", true).apply()
-            OemSettingsHelper.openBatteryOptimization(this)
+        if (!prefs.getBoolean("asked_battery", false)) {
+            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                prefs.edit().putBoolean("asked_battery", true).apply()
+                OemSettingsHelper.openBatteryOptimization(this)
+            }
+        }
+        // Show autostart prompt for Vivo/Oppo/Xiaomi on first launch
+        if (!prefs.getBoolean("asked_autostart", false)) {
+            prefs.edit().putBoolean("asked_autostart", true).apply()
+            val brand = android.os.Build.BRAND.lowercase()
+            if (brand.contains("vivo") || brand.contains("oppo") || brand.contains("xiaomi") ||
+                brand.contains("redmi") || brand.contains("realme") || brand.contains("oneplus")) {
+                android.app.AlertDialog.Builder(this)
+                    .setTitle("Enable Autostart — Required for Vivo")
+                    .setMessage(
+                        "On ${android.os.Build.BRAND} phones, you MUST enable Autostart or " +
+                        "CallBridge will be killed within 1 minute.\n\n" +
+                        "Tap OK to open Autostart settings → find CallBridge → turn it ON."
+                    )
+                    .setPositiveButton("Open Autostart Settings") { _, _ ->
+                        OemSettingsHelper.openAutostartSettings(this)
+                    }
+                    .setNegativeButton("Later", null)
+                    .show()
+            }
         }
     }
 

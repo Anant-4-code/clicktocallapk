@@ -6,12 +6,13 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.SystemClock
+import android.util.Log
 
-/** Restarts the listener every few minutes if the phone killed it. */
 object ServiceWatchdog {
 
+    private const val TAG = "ServiceWatchdog"
     private const val REQUEST_CODE = 9001
-    private const val INTERVAL_MS = 3 * 60 * 1000L // 3 minutes
+    private const val INTERVAL_MS = 60 * 1000L // 1 minute — fast enough for Vivo/Oppo kill
 
     fun schedule(context: Context) {
         val alarm = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
@@ -26,21 +27,35 @@ object ServiceWatchdog {
         val triggerAt = SystemClock.elapsedRealtime() + INTERVAL_MS
 
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarm.setExactAndAllowWhileIdle(
-                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                    triggerAt,
-                    pending
-                )
-            } else {
-                alarm.set(
-                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                    triggerAt,
-                    pending
-                )
+            when {
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+                    // Android 12+ — check permission before setExact
+                    if (alarm.canScheduleExactAlarms()) {
+                        alarm.setExactAndAllowWhileIdle(
+                            AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pending
+                        )
+                    } else {
+                        // Fall back to inexact — still fires within a few minutes
+                        alarm.setAndAllowWhileIdle(
+                            AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pending
+                        )
+                    }
+                }
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> {
+                    alarm.setExactAndAllowWhileIdle(
+                        AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pending
+                    )
+                }
+                else -> {
+                    alarm.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pending)
+                }
             }
+            Log.d(TAG, "Watchdog scheduled in ${INTERVAL_MS/1000}s")
         } catch (e: SecurityException) {
+            Log.w(TAG, "Exact alarm denied — using inexact fallback")
             alarm.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pending)
+        } catch (e: Exception) {
+            Log.e(TAG, "Alarm scheduling failed: ${e.message}")
         }
     }
 }

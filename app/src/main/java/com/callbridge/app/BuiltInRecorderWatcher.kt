@@ -1,6 +1,7 @@
 package com.callbridge.app
 
 import android.content.Context
+import android.os.Build
 import android.os.FileObserver
 import android.os.Handler
 import android.os.Looper
@@ -13,17 +14,18 @@ class BuiltInRecorderWatcher(private val context: Context) {
     private val handler = Handler(Looper.getMainLooper())
     private val observers = mutableListOf<FileObserver>()
 
-    // Root paths to watch; existing and newly-created subfolders are watched too.
     private val rootPaths = listOf(
-        "/storage/emulated/0/Recordings",           // Samsung / Realme / generic
-        "/storage/emulated/0/ColorOS",              // OPPO ColorOS root
-        "/storage/emulated/0/Recordings/Record",    // Vivo FuntouchOS (confirmed)
-        "/storage/emulated/0/Record",               // Vivo older versions
-        "/storage/emulated/0/MIUI/sound_recorder",  // Xiaomi MIUI root
-        "/storage/emulated/0/CallRecordings",       // OnePlus OxygenOS
-        "/storage/emulated/0/PhoneRecord",          // Huawei
-        "/storage/emulated/0/call_recordings",      // Generic fallback
-        "/storage/emulated/0/Music/CallRecordings"  // Some Samsung variants
+        "/storage/emulated/0/Recordings/Record/Call",   // Vivo FuntouchOS — CONFIRMED
+        "/storage/emulated/0/Recordings/Record",        // Vivo root
+        "/storage/emulated/0/Recordings",               // Samsung / Realme / generic
+        "/storage/emulated/0/Record",                   // Vivo older versions
+        "/storage/emulated/0/ColorOS",                  // OPPO ColorOS
+        "/storage/emulated/0/MIUI/sound_recorder",      // Xiaomi MIUI
+        "/storage/emulated/0/MIUI/sound_recorder/call_rec",
+        "/storage/emulated/0/CallRecordings",           // OnePlus
+        "/storage/emulated/0/PhoneRecord",              // Huawei
+        "/storage/emulated/0/call_recordings",          // Generic
+        "/storage/emulated/0/Music/CallRecordings"      // Samsung variant
     )
 
     private val audioExtensions = setOf(
@@ -32,62 +34,32 @@ class BuiltInRecorderWatcher(private val context: Context) {
 
     fun start() {
         stop()
-
         for (path in rootPaths) {
             val dir = File(path)
             if (dir.exists()) watchDirRecursive(dir)
-            watchForNewSubfolders(dir)
+            else scheduleRetryWatch(dir)
         }
-
-        Log.i(TAG, "Watcher started. Monitoring ${observers.size} path(s)")
+        Log.i(TAG, "Watcher started on ${observers.size} path(s)")
     }
 
     private fun watchDirRecursive(dir: File) {
         if (!dir.exists() || !dir.isDirectory) return
-
         watchDir(dir)
         dir.listFiles()?.filter { it.isDirectory }?.forEach { watchDirRecursive(it) }
     }
 
+    @Suppress("DEPRECATION")
     private fun watchDir(dir: File) {
         Log.i(TAG, "Watching: ${dir.absolutePath}")
 
-        val observer = object : FileObserver(
-            dir.absolutePath,
-            FileObserver.CLOSE_WRITE or FileObserver.MOVED_TO or FileObserver.CREATE
-        ) {
-            override fun onEvent(event: Int, fileName: String?) {
-                if (fileName == null) return
-
-                val file = File(dir, fileName)
-                val eventType = event and FileObserver.ALL_EVENTS
-
-                if (eventType == FileObserver.CREATE && file.isDirectory) {
-                    Log.i(TAG, "New subfolder detected, watching: ${file.absolutePath}")
-                    handler.postDelayed({ watchDirRecursive(file) }, 500)
-                    return
-                }
-
-                val ext = fileName.substringAfterLast(".", "").lowercase()
-                if (ext !in audioExtensions) return
-
-                Log.i(TAG, "New recording detected: $fileName in ${dir.absolutePath}")
-
-                handler.postDelayed({
-                    if (file.exists() && file.length() > 5000) {
-                        val syncedPrefs = context.getSharedPreferences("synced_files", Context.MODE_PRIVATE)
-                        if (!syncedPrefs.getBoolean(file.name, false)) {
-                            syncedPrefs.edit().putBoolean(file.name, true).apply()
-                            val duration = file.length() / 16000
-                            CallRecordingService.enqueueUpload(context, file, duration)
-                            Log.i(TAG, "Queued for upload: ${file.name} (${file.length()} bytes)")
-                        } else {
-                            Log.d(TAG, "Already queued, skipping: ${file.name}")
-                        }
-                    } else {
-                        Log.w(TAG, "File too small or missing after delay: ${file.name}")
-                    }
-                }, 3000)
+        val observer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // Android 10+ — use File-based constructor (path-based deprecated)
+            object : FileObserver(dir, CLOSE_WRITE or MOVED_TO or CREATE) {
+                override fun onEvent(event: Int, fileName: String?) = handleEvent(dir, event, fileName)
+            }
+        } else {
+            object : FileObserver(dir.absolutePath, CLOSE_WRITE or MOVED_TO or CREATE) {
+                override fun onEvent(event: Int, fileName: String?) = handleEvent(dir, event, fileName)
             }
         }
 
@@ -95,18 +67,65 @@ class BuiltInRecorderWatcher(private val context: Context) {
         observers.add(observer)
     }
 
-    private fun watchForNewSubfolders(dir: File) {
-        if (dir.exists()) return
+    private fun handleEvent(dir: File, event: Int, fileName: String?) {
+        if (fileName == null) return
+        val file = File(dir, fileName)
+        val eventType = event and FileObserver.ALL_EVENTS
 
-        Log.d(TAG, "Path not found yet, will retry: ${dir.absolutePath}")
+        if (eventType == FileObserver.CREATE && file.isDirectory) {
+            Log.i(TAG, "New subfolder: ${file.absolutePath}")
+            handler.postDelayed({ watchDirRecursive(file) }, 500)
+            return
+        }
+
+        val ext = fileName.substringAfterLast(".", "").lowercase()
+        if (ext !in audioExtensions) return
+
+        Log.i(TAG, "Recording detected: $fileName (${file.length()} bytes)")
+
+        // Vivo writes files slowly — wait 8s then check, retry up to 3 times
+        scheduleUploadWithRetry(file, attemptsLeft = 3)
+    }
+
+    private fun scheduleUploadWithRetry(file: File, attemptsLeft: Int, delayMs: Long = 8000) {
+        handler.postDelayed({
+            when {
+                !file.exists() -> {
+                    Log.w(TAG, "File disappeared: ${file.name}")
+                }
+                file.length() < 5000 -> {
+                    if (attemptsLeft > 1) {
+                        Log.w(TAG, "File too small (${file.length()}b), retrying: ${file.name}")
+                        scheduleUploadWithRetry(file, attemptsLeft - 1, 5000)
+                    } else {
+                        Log.w(TAG, "Giving up on small file: ${file.name}")
+                    }
+                }
+                else -> {
+                    val syncedPrefs = context.getSharedPreferences("synced_files", Context.MODE_PRIVATE)
+                    if (!syncedPrefs.getBoolean(file.name, false)) {
+                        syncedPrefs.edit().putBoolean(file.name, true).apply()
+                        val duration = file.length() / 16000
+                        CallRecordingService.enqueueUpload(context, file, duration)
+                        Log.i(TAG, "Queued: ${file.name} (${file.length()} bytes)")
+                    } else {
+                        Log.d(TAG, "Already queued: ${file.name}")
+                    }
+                }
+            }
+        }, delayMs)
+    }
+
+    // Keep retrying non-existent paths every 30s — Vivo creates folders lazily
+    private fun scheduleRetryWatch(dir: File) {
         handler.postDelayed({
             if (dir.exists()) {
-                Log.i(TAG, "Path appeared, now watching: ${dir.absolutePath}")
+                Log.i(TAG, "Path appeared: ${dir.absolutePath}")
                 watchDirRecursive(dir)
             } else {
-                watchForNewSubfolders(dir)
+                scheduleRetryWatch(dir)
             }
-        }, 10_000)
+        }, 30_000)
     }
 
     fun stop() {
@@ -124,14 +143,9 @@ class BuiltInRecorderWatcher(private val context: Context) {
                     .build()
             )
             .build()
-
         androidx.work.WorkManager.getInstance(context)
-            .enqueueUniqueWork(
-                "bulk_sync",
-                androidx.work.ExistingWorkPolicy.KEEP,
-                request
-            )
-
-        Log.i(TAG, "Queued bulk sync worker")
+            .enqueueUniqueWork("bulk_sync",
+                androidx.work.ExistingWorkPolicy.KEEP, request)
+        Log.i(TAG, "Bulk sync queued")
     }
 }

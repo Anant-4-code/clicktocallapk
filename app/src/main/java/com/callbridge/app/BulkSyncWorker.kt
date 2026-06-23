@@ -37,8 +37,11 @@ class BulkSyncWorker(
 
     override suspend fun doWork(): Result {
         val syncedPrefs = applicationContext.getSharedPreferences("synced_files", Context.MODE_PRIVATE)
-        val agentId = applicationContext.getSharedPreferences("callbridge", Context.MODE_PRIVATE)
-            .getString("agentId", "Unknown") ?: "Unknown"
+        // Try both keys — MainActivity stores as "agent_id", AgentLoginActivity stores as "agentId"
+        val prefs = applicationContext.getSharedPreferences("callbridge", Context.MODE_PRIVATE)
+        val agentId = (prefs.getString("agentId", null)
+            ?: prefs.getString("agent_id", null)
+            ?: "Unknown")
 
         val client = OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)

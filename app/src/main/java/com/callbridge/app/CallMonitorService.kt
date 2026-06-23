@@ -23,9 +23,8 @@ class CallMonitorService : Service() {
         // Watch built-in recorder folders (Samsung, OPPO, Vivo, Xiaomi, etc.)
         builtInWatcher = BuiltInRecorderWatcher(this)
         builtInWatcher.start()
-        Thread {
-            builtInWatcher.scanExisting()
-        }.start()
+        // Use WorkManager for scan — plain Thread gets killed by Vivo immediately
+        builtInWatcher.scanExisting()
 
         return START_STICKY
     }

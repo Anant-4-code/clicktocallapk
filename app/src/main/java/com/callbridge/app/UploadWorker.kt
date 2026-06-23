@@ -27,10 +27,13 @@ class UploadWorker(
 
         return try {
             uploadToRailway(file, agentId, duration, timestamp)
-            file.delete() // Clean up local file after successful upload
+            applicationContext
+                .getSharedPreferences("synced_files", Context.MODE_PRIVATE)
+                .edit().putBoolean(file.name, true).apply()
             Result.success()
         } catch (e: Exception) {
-            Result.retry() // Will retry with exponential backoff
+            Log.e("UploadWorker", "Upload failed for ${file.name}: ${e.message}")
+            if (runAttemptCount < 5) Result.retry() else Result.failure()
         }
     }
 
@@ -41,9 +44,10 @@ class UploadWorker(
         timestamp: Long
     ) {
         val client = OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(120, TimeUnit.SECONDS) // Large file upload
-            .readTimeout(30, TimeUnit.SECONDS)
+            .connectTimeout(60, TimeUnit.SECONDS)
+            .writeTimeout(300, TimeUnit.SECONDS)  // 5 min — Vivo files can be large on slow networks
+            .readTimeout(60, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
             .build()
 
         val ext = file.extension.lowercase()

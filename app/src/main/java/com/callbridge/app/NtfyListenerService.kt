@@ -2,6 +2,7 @@ package com.callbridge.app
 
 import android.app.*
 import android.content.Intent
+import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -79,8 +80,10 @@ class NtfyListenerService : Service() {
             val pm = getSystemService(POWER_SERVICE) as PowerManager
             wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "CallBridge::Listener").apply {
                 setReferenceCounted(false)
-                acquire()
+                // 12-hour timeout — Vivo/Oppo ignore indefinite locks but respect timed ones
+                acquire(12 * 60 * 60 * 1000L)
             }
+            Log.d(TAG, "WakeLock acquired")
         } catch (e: Exception) {
             Log.w(TAG, "WakeLock unavailable: ${e.message}")
         }
@@ -110,8 +113,17 @@ class NtfyListenerService : Service() {
     }
 
     private fun listenToStream() {
+        val agentId = getSharedPreferences("callbridge", MODE_PRIVATE)
+            .getString("agent_id", "")?.lowercase() ?: ""
+
+        val topicUrl = if (agentId.isNotEmpty()) {
+            "${ntfyBaseUrl()}/$ntfyTopic,callbridge-$agentId/json"
+        } else {
+            "${ntfyBaseUrl()}/$ntfyTopic/json"
+        }
+
         val request = Request.Builder()
-            .url("${ntfyBaseUrl()}/$ntfyTopic/json")
+            .url(topicUrl)
             .get()
             .build()
 
@@ -137,6 +149,19 @@ class NtfyListenerService : Service() {
             val json = JSONObject(rawLine)
             if (json.optString("event", "message") != "message") return
 
+            val topic = json.optString("topic", "")
+            val agentId = getSharedPreferences("callbridge", MODE_PRIVATE)
+                .getString("agent_id", "")?.lowercase() ?: ""
+
+            if (agentId.isNotEmpty() && topic == "callbridge-$agentId") {
+                // Analysis results topic notification
+                val title = json.optString("title", "Call Report")
+                val message = json.optString("message", "")
+                val priorityStr = json.optString("priority", "default")
+                showAnalysisNotification(title, message, priorityStr)
+                return
+            }
+
             val number = resolvePhoneNumber(json.optString("message", ""))
             if (number == null) return
 
@@ -145,6 +170,43 @@ class NtfyListenerService : Service() {
         } catch (e: Exception) {
             Log.e(TAG, "Parse error: ${e.message}")
         }
+    }
+
+    private fun showAnalysisNotification(title: String, message: String, priorityStr: String) {
+        val channelId = "callbridge_alerts"
+        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                channelId,
+                "CallBridge Alerts",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Analysis reports and alerts"
+                enableLights(true)
+                enableVibration(true)
+            }
+            nm.createNotificationChannel(channel)
+        }
+
+        val priority = if (priorityStr == "high" || priorityStr == "5" || priorityStr == "4" || priorityStr == "urgent") {
+            NotificationCompat.PRIORITY_MAX
+        } else {
+            NotificationCompat.PRIORITY_HIGH
+        }
+
+        val notification = NotificationCompat.Builder(this, channelId)
+            .setSmallIcon(R.drawable.ic_stat_call)
+            .setContentTitle(title)
+            .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setPriority(priority)
+            .setAutoCancel(true)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
+            .build()
+
+        val notifId = (System.currentTimeMillis() % 100000).toInt() + 100
+        nm.notify(notifId, notification)
     }
 
     private fun resolvePhoneNumber(messageText: String): String? {
