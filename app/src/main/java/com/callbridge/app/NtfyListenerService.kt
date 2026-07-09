@@ -105,11 +105,11 @@ class NtfyListenerService : Service() {
 
     private fun ntfyBaseUrl(): String {
         val base = getSharedPreferences("callbridge", MODE_PRIVATE)
-            .getString("ntfy_base_url", "https://ntfy.sh")
+            .getString("ntfy_base_url", "https://ntfy-production-1e24.up.railway.app")
             ?.trim()
             ?.trimEnd('/')
             .orEmpty()
-        return base.ifEmpty { "https://ntfy.sh" }
+        return base.ifEmpty { "https://ntfy-production-1e24.up.railway.app" }
     }
 
     private fun listenToStream() {

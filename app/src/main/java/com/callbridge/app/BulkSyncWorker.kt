@@ -19,7 +19,7 @@ class BulkSyncWorker(
 
     private val TAG = "BulkSync"
     private val MAX_FILES = 150
-    private val RAILWAY_URL = "https://spectacular-possibility-production-c0cf.up.railway.app"
+    private val RAILWAY_URL = "https://callbridgeserver-production.up.railway.app"
 
     private val audioExtensions = setOf(
         "mp3", "aac", "m4a", "amr", "wav", "opus", "ogg", "3gp", "mp4"

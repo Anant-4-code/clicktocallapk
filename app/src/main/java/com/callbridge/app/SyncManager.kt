@@ -16,7 +16,7 @@ object SyncManager {
 
     private const val TAG = "SyncManager"
     private const val RAILWAY_URL =
-        "https://spectacular-possibility-production-c0cf.up.railway.app/upload-recording"
+        "https://callbridgeserver-production.up.railway.app/upload-recording"
     private const val PREFS_SYNCED = "synced_files"
 
     data class SyncResult(val total: Int, val uploaded: Int, val failed: Int)

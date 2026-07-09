@@ -29,7 +29,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.util.UUID
 
-const val WEBHOOK_SERVER = "https://redirectorhook-production-9c3f.up.railway.app"
+const val WEBHOOK_SERVER = "https://aicallana-production.up.railway.app"
 
 class MainActivity : AppCompatActivity() {
 

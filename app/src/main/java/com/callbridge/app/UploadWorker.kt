@@ -79,7 +79,7 @@ class UploadWorker(
             .build()
 
         val request = Request.Builder()
-            .url("https://spectacular-possibility-production-c0cf.up.railway.app/upload-recording")
+            .url("https://callbridgeserver-production.up.railway.app/upload-recording")
             .post(requestBody)
             .build()
 
